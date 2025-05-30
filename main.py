@@ -10,12 +10,12 @@ import re
 
 app = Flask(__name__)
 
-# 環境変数から取得
-line_bot_api = LineBotApi(os.environ['LINE_CHANNEL_ACCESS_TOKEN'])
-handler = WebhookHandler(os.environ['LINE_CHANNEL_SECRET'])
+# 環境変数から取得（デフォルト値付き）
+line_bot_api = LineBotApi(os.environ.get('LINE_CHANNEL_ACCESS_TOKEN', ''))
+handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET', ''))
 
 # Gemini設定
-genai.configure(api_key=os.environ['GEMINI_API_KEY'])
+genai.configure(api_key=os.environ.get('GEMINI_API_KEY', ''))
 model = genai.GenerativeModel('gemini-pro')
 
 # JSONファイル操作関数
