@@ -490,5 +490,15 @@ def handle_regular_message(event, user_id):
     )
 
 if __name__ == "__main__":
+    # スケジューラーを起動
+    from scheduler import init_scheduler, shutdown_scheduler
+    import atexit
+    
+    # スケジューラー開始
+    init_scheduler()
+    
+    # 終了時の処理
+    atexit.register(shutdown_scheduler)
+    
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
