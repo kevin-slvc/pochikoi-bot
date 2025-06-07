@@ -105,6 +105,28 @@ def handle_message(event):
             "onboarding_stage": 0
         }
 
+    # リセットコマンドは常に優先
+    if user_message in ["リセット", "reset", "最初から", "やり直し"]:
+        users_data[user_id] = {
+            "created_at": datetime.now().isoformat(),
+            "onboarding_stage": 0,
+            "onboarding_complete": False
+        }
+        save_users_data(users_data)
+        
+        reply = """データをリセットしました！
+
+もう一度最初から始めましょう💕
+
+お呼びする名前を教えてください😊
+（例：ゆき、たろう）"""
+        
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=reply)
+        )
+        return
+
     user = users_data[user_id]
 
     # オンボーディング中かチェック
@@ -429,6 +451,29 @@ def generate_daily_morning_fortune(user):
 def handle_regular_message(event, user_id):
     user = users_data[user_id]
     user_message = event.message.text
+
+    # リセットコマンド
+    if user_message in ["リセット", "reset", "最初から", "やり直し"]:
+        # ユーザーデータをリセット
+        users_data[user_id] = {
+            "created_at": datetime.now().isoformat(),
+            "onboarding_stage": 0,
+            "onboarding_complete": False
+        }
+        save_users_data(users_data)
+        
+        reply = """データをリセットしました！
+
+もう一度最初から始めましょう💕
+
+お呼びする名前を教えてください😊
+（例：ゆき、たろう）"""
+        
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=reply)
+        )
+        return
 
     if "診断" in user_message or "占い" in user_message:
         reply = generate_daily_morning_fortune(user)
