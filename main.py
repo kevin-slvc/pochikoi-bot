@@ -172,11 +172,13 @@ def handle_onboarding(event, user_id):
             QuickReplyButton(action=MessageAction(label="その他", text="その他"))
         ])
         
+        # データを保存してから返信
+        save_users_data(users_data)
+        
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=reply, quick_reply=quick_reply)
         )
-        save_users_data(users_data)
         return
 
     elif stage == 1:  # 性別
@@ -283,12 +285,11 @@ def handle_onboarding(event, user_id):
     # データ保存
     save_users_data(users_data)
 
-    # 通常の返信（クイックリプライ以外）
-    if stage != 1:  # 性別選択以外
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=reply)
-        )
+    # 返信
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=reply)
+    )
 
 def validate_birthday(text):
     patterns = [
