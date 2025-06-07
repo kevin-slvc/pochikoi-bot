@@ -48,6 +48,12 @@ class FortuneCalculator:
                 h_year, month, day = map(int, match.groups())
                 year = 1988 + h_year
                 return datetime(year, month, day)
+        elif "昭和" in birthday_str:
+            match = re.search(r'昭和(\d{1,2})年(\d{1,2})月(\d{1,2})日', birthday_str)
+            if match:
+                s_year, month, day = map(int, match.groups())
+                year = 1925 + s_year
+                return datetime(year, month, day)
         
         return None
     
