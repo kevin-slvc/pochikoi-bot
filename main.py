@@ -221,16 +221,15 @@ def handle_onboarding(event, user_id):
             user["birthday"] = message
             
             # 算命学と動物占いを計算
-            sanmeigaku = FortuneCalculator.calculate_sanmeigaku(message)
-            animal = FortuneCalculator.calculate_animal_character(message)
-            
-            if sanmeigaku and animal:
-                user["sanmeigaku"] = sanmeigaku
-                user["animal_character"] = animal
-            
-            user["onboarding_stage"] = 3
-            
-            reply = f"""素敵！{user['name']}さんは
+            try:
+                sanmeigaku = FortuneCalculator.calculate_sanmeigaku(message)
+                animal = FortuneCalculator.calculate_animal_character(message)
+                
+                if sanmeigaku and animal:
+                    user["sanmeigaku"] = sanmeigaku
+                    user["animal_character"] = animal
+                    
+                    reply = f"""素敵！{user['name']}さんは
 {animal['name']}タイプですね🐾
 
 {animal['traits']}な性格で、
@@ -242,6 +241,29 @@ def handle_onboarding(event, user_id):
 2️⃣ 恋人がいる
 3️⃣ 復縁したい
 4️⃣ 出会いを探してる"""
+                else:
+                    # エラー時のフォールバック
+                    reply = """生年月日を受け付けました！
+
+次に、今の恋愛状況は？
+
+1️⃣ 片想い中
+2️⃣ 恋人がいる
+3️⃣ 復縁したい
+4️⃣ 出会いを探してる"""
+                    
+            except Exception as e:
+                print(f"占い計算エラー: {e}")
+                reply = """生年月日を受け付けました！
+
+次に、今の恋愛状況は？
+
+1️⃣ 片想い中
+2️⃣ 恋人がいる
+3️⃣ 復縁したい
+4️⃣ 出会いを探してる"""
+            
+            user["onboarding_stage"] = 3
         else:
             reply = "正しい形式で入力してください😊\n例：1995年4月15日"
 
@@ -302,7 +324,11 @@ def handle_onboarding(event, user_id):
             fortune = generate_first_fortune_with_all_data(user)
             reply = fortune
         else:
-            reply = "手相の写真を送ってください📸\nまたは [スキップする] と入力"
+            # 画像は後で処理されるので、ここでは手相以外のテキストに対応
+            reply = """手相の写真を送ってください📸
+
+または「スキップする」と入力して
+次に進むこともできます！"""
 
     # データ保存
     save_users_data(users_data)
