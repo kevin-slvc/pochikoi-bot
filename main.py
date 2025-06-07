@@ -5,8 +5,9 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage, FollowEvent,
-    ImageMessage, QuickReply, QuickReplyButton, MessageAction
+    QuickReply, QuickReplyButton, MessageAction
 )
+# ImageMessage は一時的にコメントアウト
 import google.generativeai as genai
 from datetime import datetime, time
 import re
@@ -114,38 +115,39 @@ def handle_message(event):
     # 通常の処理
     handle_regular_message(event, user_id)
 
-@handler.add(MessageEvent, message=ImageMessage)
-def handle_image(event):
-    """手相画像の処理"""
-    user_id = event.source.user_id
-    
-    if user_id not in users_data:
-        return
-    
-    user = users_data[user_id]
-    
-    # オンボーディング中の手相受付
-    if user.get("onboarding_stage") == 5:  # 手相待ち状態
-        # 画像を取得
-        message_content = line_bot_api.get_message_content(event.message.id)
-        image_data = BytesIO(message_content.content).read()
-        
-        # 手相解析（実際の実装では画像を保存してから解析）
-        palm_analysis = analyze_palm_image(image_data)
-        
-        user["palm_analysis"] = palm_analysis
-        user["palm_uploaded_at"] = datetime.now().isoformat()
-        user["onboarding_complete"] = True
-        
-        # 初回診断を生成
-        fortune = generate_first_fortune_with_all_data(user)
-        
-        save_users_data(users_data)
-        
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=fortune)
-        )
+# 手相画像処理は一時的に無効化
+# @handler.add(MessageEvent, message=ImageMessage)
+# def handle_image(event):
+#     """手相画像の処理"""
+#     user_id = event.source.user_id
+#     
+#     if user_id not in users_data:
+#         return
+#     
+#     user = users_data[user_id]
+#     
+#     # オンボーディング中の手相受付
+#     if user.get("onboarding_stage") == 5:  # 手相待ち状態
+#         # 画像を取得
+#         message_content = line_bot_api.get_message_content(event.message.id)
+#         image_data = BytesIO(message_content.content).read()
+#         
+#         # 手相解析（実際の実装では画像を保存してから解析）
+#         palm_analysis = analyze_palm_image(image_data)
+#         
+#         user["palm_analysis"] = palm_analysis
+#         user["palm_uploaded_at"] = datetime.now().isoformat()
+#         user["onboarding_complete"] = True
+#         
+#         # 初回診断を生成
+#         fortune = generate_first_fortune_with_all_data(user)
+#         
+#         save_users_data(users_data)
+#         
+#         line_bot_api.reply_message(
+#             event.reply_token,
+#             TextSendMessage(text=fortune)
+#         )
 
 def handle_onboarding(event, user_id):
     user = users_data[user_id]
@@ -303,26 +305,9 @@ def validate_birthday(text):
     return False
 
 def analyze_palm_image(image_data):
-    """手相画像をGemini Vision APIで解析"""
-    try:
-        # 画像をbase64エンコード
-        image = genai.Image(image_data)
-        
-        prompt = """この手相画像から、恋愛に関する特徴を分析してください。
-
-以下の点に注目：
-1. 感情線：恋愛感情の豊かさ、情熱度
-2. 結婚線：結婚の時期、回数
-3. 金星丘（親指の付け根）：愛情の深さ
-4. 運命線：人生の転機
-
-200文字程度で、ポジティブな表現で分析してください。"""
-
-        response = vision_model.generate_content([prompt, image])
-        return response.text
-    except Exception as e:
-        print(f"手相解析エラー: {e}")
-        return "手相から温かい愛情運を感じます。詳細は後日の占いでお伝えします。"
+    """手相画像をGemini Vision APIで解析（一時的に簡易版）"""
+    # 画像処理ライブラリが使えないため、一時的に固定メッセージを返す
+    return "手相から温かい愛情運を感じます。詳細な分析は後日お伝えします。"
 
 def generate_first_fortune_with_all_data(user):
     """全データを使った初回診断"""
