@@ -58,12 +58,9 @@ class FortuneScheduler:
     
     @staticmethod
     def load_users_data():
-        """ユーザーデータ読み込み"""
-        try:
-            with open('users_data.json', 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            return {}
+        """データベースから全ユーザーを読み込み"""
+        from database import DatabaseManager
+        return DatabaseManager.get_all_users()
     
     def send_morning_fortunes(self):
         """毎朝の占い配信"""
