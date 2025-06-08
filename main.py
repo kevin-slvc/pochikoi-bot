@@ -5,15 +5,11 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage, FollowEvent,
-    QuickReply, QuickReplyButton, MessageAction
+    ImageMessage, QuickReply, QuickReplyButton, MessageAction
 )
-# ImageMessage は一時的にコメントアウト
 import google.generativeai as genai
 from datetime import datetime, time
 import re
-import base64
-import requests
-from io import BytesIO
 
 # カスタムモジュール（fortune_logic.pyが必要）
 from fortune_logic import FortuneCalculator
@@ -137,39 +133,32 @@ def handle_message(event):
     # 通常の処理
     handle_regular_message(event, user_id)
 
-# 手相画像処理は一時的に無効化
-# @handler.add(MessageEvent, message=ImageMessage)
-# def handle_image(event):
-#     """手相画像の処理"""
-#     user_id = event.source.user_id
-#     
-#     if user_id not in users_data:
-#         return
-#     
-#     user = users_data[user_id]
-#     
-#     # オンボーディング中の手相受付
-#     if user.get("onboarding_stage") == 5:  # 手相待ち状態
-#         # 画像を取得
-#         message_content = line_bot_api.get_message_content(event.message.id)
-#         image_data = BytesIO(message_content.content).read()
-#         
-#         # 手相解析（実際の実装では画像を保存してから解析）
-#         palm_analysis = analyze_palm_image(image_data)
-#         
-#         user["palm_analysis"] = palm_analysis
-#         user["palm_uploaded_at"] = datetime.now().isoformat()
-#         user["onboarding_complete"] = True
-#         
-#         # 初回診断を生成
-#         fortune = generate_first_fortune_with_all_data(user)
-#         
-#         save_users_data(users_data)
-#         
-#         line_bot_api.reply_message(
-#             event.reply_token,
-#             TextSendMessage(text=fortune)
-#         )
+@handler.add(MessageEvent, message=ImageMessage)
+def handle_image_simple(event):
+    """手相画像の簡易処理"""
+    user_id = event.source.user_id
+    
+    if user_id not in users_data:
+        return
+    
+    user = users_data[user_id]
+    
+    # オンボーディング中の手相受付
+    if user.get("onboarding_stage") == 5:
+        # 簡易的な手相分析
+        user["palm_analysis"] = "手相から素晴らしい恋愛運を感じます！感情線がはっきりしていて、愛情深い性格が表れています。"
+        user["palm_uploaded_at"] = datetime.now().isoformat()
+        user["onboarding_complete"] = True
+        
+        # 初回診断を生成
+        fortune = generate_first_fortune_with_all_data(user)
+        
+        save_users_data(users_data)
+        
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=fortune)
+        )
 
 def handle_onboarding(event, user_id):
     user = users_data[user_id]
@@ -477,29 +466,6 @@ def generate_daily_morning_fortune(user):
 def handle_regular_message(event, user_id):
     user = users_data[user_id]
     user_message = event.message.text
-
-    # リセットコマンド
-    if user_message in ["リセット", "reset", "最初から", "やり直し"]:
-        # ユーザーデータをリセット
-        users_data[user_id] = {
-            "created_at": datetime.now().isoformat(),
-            "onboarding_stage": 0,
-            "onboarding_complete": False
-        }
-        save_users_data(users_data)
-        
-        reply = """データをリセットしました！
-
-もう一度最初から始めましょう💕
-
-お呼びする名前を教えてください😊
-（例：ゆき、たろう）"""
-        
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=reply)
-        )
-        return
 
     if "診断" in user_message or "占い" in user_message:
         reply = generate_daily_morning_fortune(user)
