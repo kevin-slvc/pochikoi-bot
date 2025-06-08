@@ -11,8 +11,9 @@ import google.generativeai as genai
 from datetime import datetime, time
 import re
 
-# カスタムモジュール（fortune_logic.pyが必要）
+# カスタムモジュール
 from fortune_logic import FortuneCalculator
+from database import DatabaseManager
 
 app = Flask(__name__)
 
@@ -25,26 +26,14 @@ genai.configure(api_key=os.environ.get('GEMINI_API_KEY', ''))
 model = genai.GenerativeModel('gemini-pro')
 vision_model = genai.GenerativeModel('gemini-pro-vision')
 
-# JSONファイル操作関数
-def load_users_data():
-    try:
-        with open('users_data.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except:
-        return {}
-
-def save_users_data(data):
-    with open('users_data.json', 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-# グローバル変数として読み込み
-users_data = load_users_data()
+# データベース初期化（アプリ起動時に実行）
+DatabaseManager.init_db()
 
 @app.route("/")
 def home():
     return """
     <h1>ポチ恋 Bot is running! 💕</h1>
-    <p>1タップ恋愛占い - 算命学 & 動物占い対応版</p>
+    <p>1タップ恋愛占い - PostgreSQL版</p>
     """
 
 @app.route("/callback", methods=['POST', 'GET'])
@@ -66,13 +55,15 @@ def callback():
 def handle_follow(event):
     user_id = event.source.user_id
 
-    # 新規ユーザーをデータに追加
-    if user_id not in users_data:
-        users_data[user_id] = {
+    # 新規ユーザーをデータベースに追加
+    user_data = DatabaseManager.get_user(user_id)
+    if not user_data:
+        user_data = {
             "created_at": datetime.now().isoformat(),
-            "onboarding_stage": 0
+            "onboarding_stage": 0,
+            "onboarding_complete": False
         }
-        save_users_data(users_data)
+        DatabaseManager.save_user(user_id, user_data)
 
     welcome_message = """💕ポチ恋へようこそ💕
 
@@ -95,20 +86,23 @@ def handle_message(event):
     user_message = event.message.text.strip()
 
     # ユーザーデータ確認
-    if user_id not in users_data:
-        users_data[user_id] = {
-            "created_at": datetime.now().isoformat(),
-            "onboarding_stage": 0
-        }
-
-    # リセットコマンドは常に優先
-    if user_message in ["リセット", "reset", "最初から", "やり直し"]:
-        users_data[user_id] = {
+    user_data = DatabaseManager.get_user(user_id)
+    if not user_data:
+        user_data = {
             "created_at": datetime.now().isoformat(),
             "onboarding_stage": 0,
             "onboarding_complete": False
         }
-        save_users_data(users_data)
+        DatabaseManager.save_user(user_id, user_data)
+
+    # リセットコマンドは常に優先
+    if user_message in ["リセット", "reset", "最初から", "やり直し"]:
+        user_data = {
+            "created_at": datetime.now().isoformat(),
+            "onboarding_stage": 0,
+            "onboarding_complete": False
+        }
+        DatabaseManager.save_user(user_id, user_data)
         
         reply = """データをリセットしました！
 
@@ -123,51 +117,48 @@ def handle_message(event):
         )
         return
 
-    user = users_data[user_id]
-
     # オンボーディング中かチェック
-    if "onboarding_complete" not in user or not user["onboarding_complete"]:
-        handle_onboarding(event, user_id)
+    if not user_data.get("onboarding_complete", False):
+        handle_onboarding(event, user_id, user_data)
         return
 
     # 通常の処理
-    handle_regular_message(event, user_id)
+    handle_regular_message(event, user_id, user_data)
 
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image_simple(event):
     """手相画像の簡易処理"""
     user_id = event.source.user_id
     
-    if user_id not in users_data:
+    user_data = DatabaseManager.get_user(user_id)
+    if not user_data:
         return
     
-    user = users_data[user_id]
-    
     # オンボーディング中の手相受付
-    if user.get("onboarding_stage") == 5:
+    if user_data.get("onboarding_stage") == 5:
         # 簡易的な手相分析
-        user["palm_analysis"] = "手相から素晴らしい恋愛運を感じます！感情線がはっきりしていて、愛情深い性格が表れています。"
-        user["palm_uploaded_at"] = datetime.now().isoformat()
-        user["onboarding_complete"] = True
+        user_data["palm_analysis"] = "手相から素晴らしい恋愛運を感じます！感情線がはっきりしていて、愛情深い性格が表れています。"
+        user_data["palm_uploaded_at"] = datetime.now().isoformat()
+        user_data["onboarding_complete"] = True
+        
+        # データベースに保存
+        DatabaseManager.save_user(user_id, user_data)
         
         # 初回診断を生成
-        fortune = generate_first_fortune_with_all_data(user)
-        
-        save_users_data(users_data)
+        fortune = generate_first_fortune_with_all_data(user_data)
         
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=fortune)
         )
 
-def handle_onboarding(event, user_id):
-    user = users_data[user_id]
-    stage = user.get("onboarding_stage", 0)
+def handle_onboarding(event, user_id, user_data):
+    stage = user_data.get("onboarding_stage", 0)
     message = event.message.text
 
     if stage == 0:  # 名前
-        user["name"] = message
-        user["onboarding_stage"] = 1
+        user_data["name"] = message
+        user_data["onboarding_stage"] = 1
         reply = f"""ありがとうございます、{message}さん✨
 
 次に、性別を教えてください！
@@ -183,8 +174,8 @@ def handle_onboarding(event, user_id):
             QuickReplyButton(action=MessageAction(label="その他", text="その他"))
         ])
         
-        # データを保存してから返信
-        save_users_data(users_data)
+        # データベースに保存
+        DatabaseManager.save_user(user_id, user_data)
         
         line_bot_api.reply_message(
             event.reply_token,
@@ -194,8 +185,8 @@ def handle_onboarding(event, user_id):
 
     elif stage == 1:  # 性別
         if message in ["女性", "男性", "その他"]:
-            user["gender"] = message
-            user["onboarding_stage"] = 2
+            user_data["gender"] = message
+            user_data["onboarding_stage"] = 2
             reply = """生年月日を教えてください📅
 
 （例：1995年4月15日）
@@ -207,7 +198,7 @@ def handle_onboarding(event, user_id):
 
     elif stage == 2:  # 生年月日
         if validate_birthday(message):
-            user["birthday"] = message
+            user_data["birthday"] = message
             
             # 算命学と動物占いを計算
             try:
@@ -215,10 +206,10 @@ def handle_onboarding(event, user_id):
                 animal = FortuneCalculator.calculate_animal_character(message)
                 
                 if sanmeigaku and animal:
-                    user["sanmeigaku"] = sanmeigaku
-                    user["animal_character"] = animal
+                    user_data["sanmeigaku"] = sanmeigaku
+                    user_data["animal_character"] = animal
                     
-                    reply = f"""素敵！{user['name']}さんは
+                    reply = f"""素敵！{user_data['name']}さんは
 {animal['name']}タイプですね🐾
 
 {animal['traits']}な性格で、
@@ -252,7 +243,7 @@ def handle_onboarding(event, user_id):
 3️⃣ 復縁したい
 4️⃣ 出会いを探してる"""
             
-            user["onboarding_stage"] = 3
+            user_data["onboarding_stage"] = 3
         else:
             reply = "正しい形式で入力してください😊\n例：1995年4月15日"
 
@@ -265,8 +256,8 @@ def handle_onboarding(event, user_id):
         }
 
         if message in status_map:
-            user["relationship_status"] = status_map[message]
-            user["onboarding_stage"] = 4
+            user_data["relationship_status"] = status_map[message]
+            user_data["onboarding_stage"] = 4
             reply = """恋愛で一番の悩みは？
 
 1️⃣ タイミングがわからない
@@ -287,8 +278,8 @@ def handle_onboarding(event, user_id):
         }
 
         if message in concern_map:
-            user["main_concern"] = concern_map[message]
-            user["onboarding_stage"] = 5
+            user_data["main_concern"] = concern_map[message]
+            user_data["onboarding_stage"] = 5
             
             reply = """最後に、より精度の高い
 占いのために...
@@ -306,11 +297,14 @@ def handle_onboarding(event, user_id):
     
     elif stage == 5:  # 手相待ち
         if message.lower() in ["スキップ", "スキップする", "skip"]:
-            user["onboarding_complete"] = True
-            user["palm_analysis"] = None
+            user_data["onboarding_complete"] = True
+            user_data["palm_analysis"] = None
+            
+            # データベースに保存
+            DatabaseManager.save_user(user_id, user_data)
             
             # 初回診断を生成
-            fortune = generate_first_fortune_with_all_data(user)
+            fortune = generate_first_fortune_with_all_data(user_data)
             reply = fortune
         else:
             # 画像は後で処理されるので、ここでは手相以外のテキストに対応
@@ -319,8 +313,8 @@ def handle_onboarding(event, user_id):
 または「スキップする」と入力して
 次に進むこともできます！"""
 
-    # データ保存
-    save_users_data(users_data)
+    # データベースに保存
+    DatabaseManager.save_user(user_id, user_data)
 
     # 返信
     line_bot_api.reply_message(
@@ -347,21 +341,21 @@ def analyze_palm_image(image_data):
     # 画像処理ライブラリが使えないため、一時的に固定メッセージを返す
     return "手相から温かい愛情運を感じます。詳細な分析は後日お伝えします。"
 
-def generate_first_fortune_with_all_data(user):
+def generate_first_fortune_with_all_data(user_data):
     """全データを使った初回診断"""
-    animal = user.get('animal_character', {})
-    sanmeigaku = user.get('sanmeigaku', {})
-    palm = user.get('palm_analysis', '')
+    animal = user_data.get('animal_character', {})
+    sanmeigaku = user_data.get('sanmeigaku', {})
+    palm = user_data.get('palm_analysis', '')
     
     prompt = f"""
 初回の特別診断を作成してください。
 
 【基本情報】
-名前：{user.get('name')}さん
-性別：{user.get('gender')}
-生年月日：{user.get('birthday')}
-恋愛状況：{user.get('relationship_status')}
-主な悩み：{user.get('main_concern')}
+名前：{user_data.get('name')}さん
+性別：{user_data.get('gender')}
+生年月日：{user_data.get('birthday')}
+恋愛状況：{user_data.get('relationship_status')}
+主な悩み：{user_data.get('main_concern')}
 
 【占い情報】
 動物占い：{animal.get('name', '')} - {animal.get('traits', '')}
@@ -381,14 +375,14 @@ def generate_first_fortune_with_all_data(user):
 
     try:
         response = model.generate_content(prompt)
-        return f"""🔮 {user.get('name')}さんの診断結果 🔮
+        return f"""🔮 {user_data.get('name')}さんの診断結果 🔮
 
 {response.text}
 
 💫 明日から毎朝7時に
 あなただけの占いをお届けします！"""
     except:
-        return f"""🔮 {user.get('name')}さんの診断結果 🔮
+        return f"""🔮 {user_data.get('name')}さんの診断結果 🔮
 
 {animal.get('name', '')}タイプのあなたは
 {animal.get('traits', '')}な魅力の持ち主！
@@ -396,16 +390,16 @@ def generate_first_fortune_with_all_data(user):
 今週は恋愛運が上昇中✨
 特に木曜の午後が最高のタイミング。
 
-{user.get('main_concern')}の悩みは
+{user_data.get('main_concern')}の悩みは
 もうすぐ解決の兆しが見えそう💕
 
 明日の朝7時に詳細な占いをお届けします！"""
 
-def generate_daily_morning_fortune(user):
+def generate_daily_morning_fortune(user_data):
     """毎朝の占い生成（パーソナライズ版）"""
     now = datetime.now()
-    animal = user.get('animal_character', {})
-    sanmeigaku = user.get('sanmeigaku', {})
+    animal = user_data.get('animal_character', {})
+    sanmeigaku = user_data.get('sanmeigaku', {})
     
     # 今日の運勢を算命学で計算
     daily_fortune = FortuneCalculator.get_daily_element_fortune(
@@ -413,7 +407,7 @@ def generate_daily_morning_fortune(user):
     )
     
     prompt = f"""
-{user.get('name')}さんへの今日の占いを作成してください。
+{user_data.get('name')}さんへの今日の占いを作成してください。
 
 【基本情報】
 日付：{now.strftime('%m月%d日')}
@@ -422,8 +416,8 @@ def generate_daily_morning_fortune(user):
 今日の相性：{daily_fortune.get('compatibility', '')}
 
 【ユーザー情報】
-恋愛状況：{user.get('relationship_status')}
-悩み：{user.get('main_concern')}
+恋愛状況：{user_data.get('relationship_status')}
+悩み：{user_data.get('main_concern')}
 
 250文字程度で以下を含めて：
 1. 今日の総合運（5段階の星）
@@ -437,7 +431,7 @@ def generate_daily_morning_fortune(user):
     try:
         response = model.generate_content(prompt)
         
-        return f"""おはようございます、{user.get('name')}さん☀️
+        return f"""おはようございます、{user_data.get('name')}さん☀️
 
 【{now.strftime('%m月%d日')}の運勢】
 算命学×{animal.get('name', '')}の診断
@@ -447,7 +441,7 @@ def generate_daily_morning_fortune(user):
 詳細診断を見る >"""
         
     except:
-        return f"""おはようございます、{user.get('name')}さん☀️
+        return f"""おはようございます、{user_data.get('name')}さん☀️
 
 【{now.strftime('%m月%d日')}の運勢】
 総合運：{daily_fortune.get('compatibility', '★★★')}
@@ -463,12 +457,11 @@ def generate_daily_morning_fortune(user):
 
 詳細診断を見る >"""
 
-def handle_regular_message(event, user_id):
-    user = users_data[user_id]
+def handle_regular_message(event, user_id, user_data):
     user_message = event.message.text
 
     if "診断" in user_message or "占い" in user_message:
-        reply = generate_daily_morning_fortune(user)
+        reply = generate_daily_morning_fortune(user_data)
     elif "相性" in user_message:
         reply = """相性診断をご希望ですね💕
 
