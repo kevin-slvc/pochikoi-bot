@@ -154,7 +154,7 @@ class FortuneCalculator:
             "score": score,
             "day_element": day_jikkan,
             "compatibility": "★" * score,
-            "advice": cls._get_fortune_advice(score)
+            "advice": FortuneCalculator._get_fortune_advice(score)
         }
     
     @staticmethod
