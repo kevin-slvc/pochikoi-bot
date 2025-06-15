@@ -26,8 +26,44 @@ genai.configure(api_key=os.environ.get('GEMINI_API_KEY', ''))
 model = genai.GenerativeModel('gemini-pro')
 vision_model = genai.GenerativeModel('gemini-pro-vision')
 
-# データベース初期化（アプリ起動時に実行）
-DatabaseManager.init_db()
+# データベース初期化を試みる
+try:
+    db_initialized = DatabaseManager.init_db()
+    USE_DATABASE = db_initialized
+except Exception as e:
+    print(f"Database initialization failed: {e}")
+    USE_DATABASE = False
+
+# JSONファイル操作関数（フォールバック用）
+def load_users_data_json():
+    try:
+        with open('users_data.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_users_data_json(data):
+    with open('users_data.json', 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+# ユーザーデータ操作のラッパー関数
+def get_user_data(user_id):
+    """ユーザーデータを取得"""
+    if USE_DATABASE:
+        return DatabaseManager.get_user(user_id)
+    else:
+        users_data = load_users_data_json()
+        return users_data.get(user_id)
+
+def save_user_data(user_id, user_data):
+    """ユーザーデータを保存"""
+    if USE_DATABASE:
+        return DatabaseManager.save_user(user_id, user_data)
+    else:
+        users_data = load_users_data_json()
+        users_data[user_id] = user_data
+        save_users_data_json(users_data)
+        return True
 
 @app.route("/")
 def home():
@@ -56,14 +92,14 @@ def handle_follow(event):
     user_id = event.source.user_id
 
     # 新規ユーザーをデータベースに追加
-    user_data = DatabaseManager.get_user(user_id)
+    user_data = get_user_data(user_id)
     if not user_data:
         user_data = {
             "created_at": datetime.now().isoformat(),
             "onboarding_stage": 0,
             "onboarding_complete": False
         }
-        DatabaseManager.save_user(user_id, user_data)
+        save_user_data(user_id, user_data)
 
     welcome_message = """💕ポチ恋へようこそ💕
 
