@@ -9,19 +9,34 @@ from sqlalchemy.pool import NullPool
 # データベースURL（環境変数から取得）
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
 
+# Railway内部URLを外部URLに変換
+if 'postgres.railway.internal' in DATABASE_URL:
+    # 内部URLの場合は、一旦スキップしてJSONファイルを使用
+    print("Warning: Internal Railway URL detected. Using JSON fallback.")
+    DATABASE_URL = ''
+
 # PostgreSQL URLの修正（RailwayのURLは古い形式の場合がある）
-if DATABASE_URL.startswith('postgres://'):
+if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
 
-# エンジンの作成
-engine = create_engine(
-    DATABASE_URL,
-    poolclass=NullPool,  # Railway環境での接続プール問題を回避
-    echo=False
-)
-
-# セッションの設定
-SessionLocal = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
+# エンジンの作成（DATABASE_URLが空の場合はスキップ）
+if DATABASE_URL:
+    try:
+        engine = create_engine(
+            DATABASE_URL,
+            poolclass=NullPool,  # Railway環境での接続プール問題を回避
+            echo=False
+        )
+        # セッションの設定
+        SessionLocal = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
+        DB_AVAILABLE = True
+    except Exception as e:
+        print(f"Database connection failed: {e}")
+        DB_AVAILABLE = False
+else:
+    DB_AVAILABLE = False
+    engine = None
+    SessionLocal = None
 
 # ベースクラス
 Base = declarative_base()
@@ -126,6 +141,9 @@ class DatabaseManager:
     @staticmethod
     def init_db():
         """データベースの初期化"""
+        if not DB_AVAILABLE:
+            print("Database not available. Using JSON file storage.")
+            return False
         try:
             Base.metadata.create_all(bind=engine)
             print("Database tables created successfully!")
