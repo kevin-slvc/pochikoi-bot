@@ -13,7 +13,6 @@ import re
 
 # カスタムモジュール
 from fortune_logic import FortuneCalculator
-from database import DatabaseManager
 
 app = Flask(__name__)
 
@@ -27,11 +26,14 @@ model = genai.GenerativeModel('gemini-pro')
 vision_model = genai.GenerativeModel('gemini-pro-vision')
 
 # データベース初期化を試みる
+USE_DATABASE = False
 try:
+    from database import DatabaseManager
     db_initialized = DatabaseManager.init_db()
     USE_DATABASE = db_initialized
+    print(f"Database mode: {USE_DATABASE}")
 except Exception as e:
-    print(f"Database initialization failed: {e}")
+    print(f"Database initialization failed, using JSON: {e}")
     USE_DATABASE = False
 
 # JSONファイル操作関数（フォールバック用）
@@ -65,11 +67,19 @@ def save_user_data(user_id, user_data):
         save_users_data_json(users_data)
         return True
 
+def get_all_users_data():
+    """全ユーザーデータを取得"""
+    if USE_DATABASE:
+        return DatabaseManager.get_all_users()
+    else:
+        return load_users_data_json()
+
 @app.route("/")
 def home():
-    return """
+    mode = "PostgreSQL" if USE_DATABASE else "JSON"
+    return f"""
     <h1>ポチ恋 Bot is running! 💕</h1>
-    <p>1タップ恋愛占い - PostgreSQL版</p>
+    <p>1タップ恋愛占い - {mode}モード</p>
     """
 
 @app.route("/callback", methods=['POST', 'GET'])
@@ -91,7 +101,7 @@ def callback():
 def handle_follow(event):
     user_id = event.source.user_id
 
-    # 新規ユーザーをデータベースに追加
+    # 新規ユーザーを追加
     user_data = get_user_data(user_id)
     if not user_data:
         user_data = {
@@ -122,14 +132,14 @@ def handle_message(event):
     user_message = event.message.text.strip()
 
     # ユーザーデータ確認
-    user_data = DatabaseManager.get_user(user_id)
+    user_data = get_user_data(user_id)
     if not user_data:
         user_data = {
             "created_at": datetime.now().isoformat(),
             "onboarding_stage": 0,
             "onboarding_complete": False
         }
-        DatabaseManager.save_user(user_id, user_data)
+        save_user_data(user_id, user_data)
 
     # リセットコマンドは常に優先
     if user_message in ["リセット", "reset", "最初から", "やり直し"]:
@@ -138,7 +148,7 @@ def handle_message(event):
             "onboarding_stage": 0,
             "onboarding_complete": False
         }
-        DatabaseManager.save_user(user_id, user_data)
+        save_user_data(user_id, user_data)
         
         reply = """データをリセットしました！
 
@@ -166,7 +176,7 @@ def handle_image_simple(event):
     """手相画像の簡易処理"""
     user_id = event.source.user_id
     
-    user_data = DatabaseManager.get_user(user_id)
+    user_data = get_user_data(user_id)
     if not user_data:
         return
     
@@ -177,8 +187,8 @@ def handle_image_simple(event):
         user_data["palm_uploaded_at"] = datetime.now().isoformat()
         user_data["onboarding_complete"] = True
         
-        # データベースに保存
-        DatabaseManager.save_user(user_id, user_data)
+        # データを保存
+        save_user_data(user_id, user_data)
         
         # 初回診断を生成
         fortune = generate_first_fortune_with_all_data(user_data)
@@ -210,8 +220,8 @@ def handle_onboarding(event, user_id, user_data):
             QuickReplyButton(action=MessageAction(label="その他", text="その他"))
         ])
         
-        # データベースに保存
-        DatabaseManager.save_user(user_id, user_data)
+        # データを保存
+        save_user_data(user_id, user_data)
         
         line_bot_api.reply_message(
             event.reply_token,
@@ -336,8 +346,8 @@ def handle_onboarding(event, user_id, user_data):
             user_data["onboarding_complete"] = True
             user_data["palm_analysis"] = None
             
-            # データベースに保存
-            DatabaseManager.save_user(user_id, user_data)
+            # データを保存
+            save_user_data(user_id, user_data)
             
             # 初回診断を生成
             fortune = generate_first_fortune_with_all_data(user_data)
@@ -349,8 +359,8 @@ def handle_onboarding(event, user_id, user_data):
 または「スキップする」と入力して
 次に進むこともできます！"""
 
-    # データベースに保存
-    DatabaseManager.save_user(user_id, user_data)
+    # データを保存
+    save_user_data(user_id, user_data)
 
     # 返信
     line_bot_api.reply_message(
@@ -546,14 +556,17 @@ def handle_regular_message(event, user_id, user_data):
 
 if __name__ == "__main__":
     # スケジューラーを起動
-    from scheduler import init_scheduler, shutdown_scheduler
-    import atexit
-    
-    # スケジューラー開始
-    init_scheduler()
-    
-    # 終了時の処理
-    atexit.register(shutdown_scheduler)
+    try:
+        from scheduler import init_scheduler, shutdown_scheduler
+        import atexit
+        
+        # スケジューラー開始
+        init_scheduler()
+        
+        # 終了時の処理
+        atexit.register(shutdown_scheduler)
+    except Exception as e:
+        print(f"Scheduler initialization failed: {e}")
     
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
